@@ -65,6 +65,8 @@ function statExists(path) {
 }
 
 function buildAndLoadManifest() {
+  console.log("[generate-ts] Installing .NET dependencies...");
+  execSync(`dotnet restore ${DOTNET_PROJECT} -nologo`, { stdio: "inherit" });
   console.log("[generate-ts] Building .NET project to produce manifest...");
   execSync(
     `dotnet build ${DOTNET_PROJECT} -c Debug -nologo /p:EmitCompilerGeneratedFiles=true /p:CompilerGeneratedFilesOutputPath=${MANIFEST_COMPILER_GENERATED_DIR} /p:OutputPath=${MANIFEST_BUILD_OUTPUT}`,
