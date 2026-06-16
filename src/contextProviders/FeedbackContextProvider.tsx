@@ -105,6 +105,43 @@ function buildTrace(error: ErrorDisplayItem) {
     return parts.join("\n");
 }
 
+// These async bootstrap routines live at module scope on purpose. React Compiler
+// cannot optimize a component whose body contains a try/catch with "value blocks"
+// (ternary, logical, optional chaining, for-of, etc) inside it, and it bails out
+// of the WHOLE component when it hits one. Keeping the try/catch logic out here
+// lets the provider itself be optimized, which is what keeps showError and the
+// rest of the context value referentially stable.
+async function initSidecar(
+    onReady: () => void,
+    onFatal: (input: ErrorReportInput) => void,
+) {
+    try {
+        await getSidecarPort();
+        onReady();
+    } catch (error) {
+        onFatal({
+            source: "frontend.sidecar",
+            userMessage: "The backend process did not start in time.",
+            code: "SIDECAR_TIMEOUT",
+            technicalDetails: error instanceof Error ? error.message : String(error),
+        });
+    }
+}
+
+async function loadRecentErrors(push: (item: ErrorDisplayItem) => void) {
+    const api = new ErrorDisplayApi();
+    try {
+        const result = await api.getRecentErrors();
+        if (!result.success || !result.data) return;
+
+        for (const error of result.data) {
+            push(mapEventToDisplayItem(error));
+        }
+    } catch {
+        // Ignore bootstrap errors here; this provider is itself error infrastructure.
+    }
+}
+
 // Isolated component that owns the snackbar queue state. This prevents
 // snackbar appear/dismiss cycles from re-rendering FeedbackContextProvider
 // (and by extension all context consumers), which would reset uncontrolled
@@ -137,7 +174,7 @@ export function FeedbackContextProvider(props: PropsWithChildren) {
     const [fatalError, setFatalError] = useState<ErrorDisplayItem | null>(null);
     const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
     const fingerprintsRef = useRef<Map<string, number>>(new Map());
-    const snackbarPushRef = useRef<(item: SnackbarItem) => void>(() => {});
+    const snackbarPushRef = useRef<(item: SnackbarItem) => void>(() => { });
 
     const registerSnackbarPush = (push: (item: SnackbarItem) => void) => {
         snackbarPushRef.current = push;
@@ -251,27 +288,9 @@ export function FeedbackContextProvider(props: PropsWithChildren) {
         }
     };
 
-    // Use refs to break circular deps: these effects should run once, not re-fire
-    // when callback references change due to parent re-renders.
-    const showFatalRef = useRef(showFatal);
-    showFatalRef.current = showFatal;
-    const pushErrorRef = useRef(pushError);
-    pushErrorRef.current = pushError;
 
     useEffect(() => {
-        void (async () => {
-            try {
-                await getSidecarPort();
-                setBackendReady(true);
-            } catch (error) {
-                showFatalRef.current({
-                    source: "frontend.sidecar",
-                    userMessage: "The backend process did not start in time.",
-                    code: "SIDECAR_TIMEOUT",
-                    technicalDetails: error instanceof Error ? error.message : String(error),
-                });
-            }
-        })();
+        void initSidecar(() => setBackendReady(true), showFatal);
     }, []);
 
     useEffect(() => {
@@ -280,22 +299,10 @@ export function FeedbackContextProvider(props: PropsWithChildren) {
         const listener = new EventListener();
 
         listener.on("frontend:error", (event) => {
-            pushErrorRef.current(mapEventToDisplayItem(event));
+            pushError(mapEventToDisplayItem(event));
         });
 
-        void (async () => {
-            const api = new ErrorDisplayApi();
-            try {
-                const result = await api.getRecentErrors();
-                if (!result.success || !result.data) return;
-
-                for (const error of result.data) {
-                    pushErrorRef.current(mapEventToDisplayItem(error));
-                }
-            } catch {
-                // Ignore bootstrap errors here; this provider is itself error infrastructure.
-            }
-        })();
+        void loadRecentErrors(pushError);
 
         return () => {
             listener.disconnect();
@@ -307,7 +314,7 @@ export function FeedbackContextProvider(props: PropsWithChildren) {
         const onError = (event: ErrorEvent) => {
             const details = event.error instanceof Error ? (event.error.stack ?? event.error.message) : event.message;
 
-            showFatalRef.current({
+            showFatal({
                 source: "frontend.window-error",
                 userMessage: event.message || "Unhandled frontend error.",
                 code: "FRONTEND_UNHANDLED_ERROR",
@@ -319,7 +326,7 @@ export function FeedbackContextProvider(props: PropsWithChildren) {
             const reason = event.reason;
             const details = reason instanceof Error ? (reason.stack ?? reason.message) : String(reason);
 
-            showFatalRef.current({
+            showFatal({
                 source: "frontend.unhandled-rejection",
                 userMessage: "Unhandled promise rejection.",
                 code: "FRONTEND_UNHANDLED_REJECTION",

@@ -17,7 +17,8 @@
     "lint": "eslint src/",
     "lint:fix": "eslint src/ --fix",
     "prettier:check": "prettier --check src/**/*",
-    "prettier:write": "prettier --write src/**/*"
+    "prettier:write": "prettier --write src/**/*",
+    "check:react-compiler": "node tools/check-react-compiler.mjs"
   },
   "dependencies": {
     "@emotion/react": "^11.14.0",
@@ -40,6 +41,7 @@
     "react-router": "^7.13.0"
   },
   "devDependencies": {
+    "@babel/core": "^7.29.0",
     "@chromatic-com/storybook": "^5.0.1",
     "@eslint/js": "^9.39.2",
     "@storybook/addon-a11y": "^10.2.8",
