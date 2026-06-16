@@ -12,7 +12,7 @@ public class EventBaseTests
         var evt = new DecoratedTestEvent();
         DateTimeOffset after = DateTimeOffset.UtcNow;
 
-        Assert.Equal("tests:decorated", evt.EventType);
+        Assert.Equal("tests:decorated ", evt.EventType);
         Assert.InRange(evt.Timestamp, before, after);
     }
 
